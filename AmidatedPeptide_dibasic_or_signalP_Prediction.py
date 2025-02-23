@@ -1,6 +1,6 @@
 
 
-#secretome = open('mouse_secretome.tsv','w') ##Mouse
+#secretome = open('mouse_secretome.tsv','r') ##Mouse
 #output = open('Mouse_amidated_peptides.csv', 'w') ##Mouse
 
 secretome = open('human_secretome.tsv', 'r') ##Human
@@ -13,9 +13,6 @@ frag_dict={}
 output_dict = {}
 name_dict = {}
 
-# for line in old_output:
-#     line = line.strip().split(',')
-#     name_dict[line[1]]=line[0]
 
 index = 0
 secreted_genes = {}
@@ -120,14 +117,13 @@ for gene in secreted_genes:
                         pep_name = 'PEP-' + str(GN) + ' ' + str(count)
                     else:
                         pep_name = 'PEP-' + str(GN)
-                    print(start)
-                    print(signal_end_aa)
+         
                     if int(start) == int(signal_end_aa):
                         signal_start = 'yes'
-                        print(signal_start)
+                        
                     else:
                         signal_start = 'no'
-                    print(signal_start)
+           
                     output.write(str(pep_name) + ',' + str(pot_hormone) + ',' + gene + ',' + name + ',' + str(
                         len(pot_hormone)) + ',' + str(start + 1) + ',' + str(
                         len(pot_hormone) + start) + ',' + upstream + ',' + downstream + ',' + str(
