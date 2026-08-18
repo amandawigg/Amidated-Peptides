@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peptidomics Spectra Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f6fa;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #1a1a2e;
+    color: white;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header h1 { font-size: 1.15rem; font-weight: 600; }
+  header span { font-size: 0.82rem; color: #8899bb; }
+
+  .load-banner {
+    background: #eef2ff;
+    border-bottom: 1px solid #c7d2fe;
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.88rem;
+    color: #3730a3;
+  }
+  .load-banner input[type=file] { font-size: 0.85rem; }
+  .load-banner button {
+    background: #4f46e5;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .load-banner button:hover { background: #4338ca; }
+
+  .main {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 0;
+    height: calc(100vh - 100px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: white;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  #peptide-search {
+    margin: 10px 12px 6px;
+    padding: 7px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    width: calc(100% - 24px);
+    outline: none;
+  }
+  #peptide-search:focus { border-color: #4f46e5; }
+  #peptide-list {
+    overflow-y: auto;
+    flex: 1;
+  }
+  .pep-item {
+    padding: 9px 16px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pep-item:hover { background: #f8fafc; }
+  .pep-item.active { background: #eef2ff; border-left: 3px solid #4f46e5; }
+  .pep-item .pep-seq { font-family: monospace; font-weight: 600; font-size: 0.9rem; }
+  .pep-item .pep-protein { font-size: 0.75rem; color: #94a3b8; }
+
+  /* ── Content ── */
+  .content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #f5f6fa;
+  }
+
+  .controls {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .control-group { display: flex; flex-direction: column; gap: 4px; }
+  .control-label { font-size: 0.72rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .tissue-tabs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 5px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    background: white;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: #475569;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { border-color: #4f46e5; color: #4f46e5; }
+  .tab-btn.active { background: #4f46e5; border-color: #4f46e5; color: white; }
+  .tab-btn.no-data { opacity: 0.35; cursor: not-allowed; }
+
+  .rep-btns { display: flex; gap: 4px; }
+  .rep-btn {
+    padding: 5px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: #475569;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .rep-btn:hover { border-color: #4f46e5; color: #4f46e5; }
+  .rep-btn.active { background: #4f46e5; border-color: #4f46e5; color: white; }
+  .rep-btn .best-badge {
+    position: absolute;
+    top: -7px; right: -7px;
+    background: #10b981;
+    color: white;
+    font-size: 0.6rem;
+    padding: 1px 4px;
+    border-radius: 10px;
+    font-weight: 700;
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 8px 24px;
+    display: flex;
+    gap: 28px;
+    align-items: center;
+    font-size: 0.82rem;
+  }
+  .stat { display: flex; align-items: center; gap: 6px; }
+  .stat-label { color: #94a3b8; }
+  .stat-val { font-weight: 700; color: #1a1a2e; }
+  .stat-val.good { color: #10b981; }
+  .stat-val.warn { color: #f59e0b; }
+  .stat-val.bad  { color: #ef4444; }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-left: auto;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: #64748b; }
+  .legend-swatch { width: 14px; height: 4px; border-radius: 2px; }
+
+  /* ── Plot area ── */
+  .plot-wrap {
+    flex: 1;
+    overflow: hidden;
+    padding: 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .plot-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #64748b;
+    padding-left: 4px;
+  }
+
+  svg.spectrum { width: 100%; }
+
+  .empty-state {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 0.95rem;
+  }
+
+  /* tooltip */
+  #tooltip {
+    position: fixed;
+    background: rgba(15,15,30,0.92);
+    color: white;
+    padding: 7px 11px;
+    border-radius: 7px;
+    font-size: 0.78rem;
+    pointer-events: none;
+    display: none;
+    z-index: 9999;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Peptidomics Spectra Viewer</h1>
+  <span>Semi-targeted peptidomics tissue panel &mdash; MS/MS mirror plots</span>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-header">Peptides</div>
+    <input type="text" id="peptide-search" placeholder="Search peptide or protein...">
+    <div id="peptide-list"></div>
+  </div>
+
+  <div class="content">
+    <div class="controls">
+      <div class="control-group">
+        <div class="control-label">Tissue</div>
+        <div class="tissue-tabs" id="tissue-tabs"></div>
+      </div>
+      <div class="control-group">
+        <div class="control-label">Replicate</div>
+        <div class="rep-btns" id="rep-btns"></div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-swatch" style="background:#4f46e5;height:10px;width:10px;border-radius:2px;"></div> Ions used for dot product</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#93c5fd;height:10px;width:10px;border-radius:2px;"></div> Other matched ions</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#cbd5e1;height:10px;width:10px;border-radius:2px;"></div> Unmatched (co-frag)</div>
+        <div class="legend-item" style="margin-left:12px; border-left:1px solid #e2e8f0; padding-left:12px; color:#94a3b8; font-style:italic;">C* = carbamidomethyl-Cys &nbsp;|&nbsp; pGlu- = pyroglutamate &nbsp;|&nbsp; -NH&#8322; = C-term amidation</div>
+      </div>
+    </div>
+
+    <div class="stats-bar" id="stats-bar">
+      <div class="stat"><span class="stat-label">Dot product:</span><span class="stat-val" id="stat-dp">--</span></div>
+      <div class="stat"><span class="stat-label">Precursor accuracy:</span><span class="stat-val" id="stat-ppm">--</span></div>
+      <div class="stat"><span class="stat-label">Scans:</span><span class="stat-val" id="stat-scans">--</span></div>
+      <div class="stat"><span class="stat-label">Avg RT:</span><span class="stat-val" id="stat-rt">--</span></div>
+    </div>
+
+    <div class="plot-wrap" id="plot-wrap">
+      <div class="empty-state">Load spectra_data.json and select a peptide to begin.</div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const DATA = __SPECTRA_DATA__;
+let state = {
+  peptide: null,
+  tissue: null,
+  rep: null,
+};
+
+const TISSUES = ["BAT","Brain","Ileum","Heart","Kidney","Liver","Lung","Pancreas","Quad","Spleen","iWAT","plasma"];
+
+// ── Load JSON ──────────────────────────────────────────────────────────────
+
+// ── Peptide list ───────────────────────────────────────────────────────────
+function buildPeptideList(filter="") {
+  const container = document.getElementById("peptide-list");
+  container.innerHTML = "";
+  if (!DATA) return;
+  const peptides = Object.keys(DATA).filter(p => {
+    const pep = DATA[p];
+    const search = filter.toLowerCase();
+    return p.toLowerCase().includes(search) ||
+      (pep.pep_name || "").toLowerCase().includes(search) ||
+      (pep.protein || "").toLowerCase().includes(search);
+  });
+  peptides.forEach(p => {
+    const pep = DATA[p];
+    const div = document.createElement("div");
+    div.className = "pep-item" + (p === state.peptide ? " active" : "");
+    div.innerHTML = `
+      <span class="pep-seq">${formatSeq(p)}</span>
+      <span class="pep-protein">${pep.pep_name || ""}</span>
+    `;
+    div.onclick = () => selectPeptide(p);
+    container.appendChild(div);
+  });
+}
+
+document.getElementById("peptide-search").addEventListener("input", e => {
+  buildPeptideList(e.target.value);
+});
+
+// ── Sequence formatting ────────────────────────────────────────────────────
+function formatSeq(seq) {
+  let s = seq;
+  // N-terminal Q -> pGlu-
+  if (s.startsWith("Q")) s = "pGlu-" + s.slice(1);
+  // Alkylated cysteines
+  s = s.replace(/C/g, "C*");
+  // C-terminal amidation
+  s = s + "-NH\u2082";
+  return s;
+}
+function selectPeptide(peptide) {
+  state.peptide = peptide;
+  state.tissue = null;
+  state.rep = null;
+  buildPeptideList(document.getElementById("peptide-search").value);
+
+  // Auto-select best tissue and replicate:
+  // Rank by how many dot product ions are actually visible in the merged
+  // spectrum, then by dot product. Skyline's ion_count reflects chromatogram
+  // integration and can exceed the ions that survive into the plotted scans,
+  // so ranking on dot product alone can surface a sparse spectrum.
+  const pep = DATA[peptide];
+  let bestTissue = null, bestRep = null;
+
+  const fragMap = pep.frag_mz_map || {};
+  const top4    = pep.top4_ions || [];
+  const MIN_VISIBLE_IONS = 3;
+
+  function visibleTop4(spec) {
+    const mzs = spec.mz || [];
+    let n = 0;
+    for (const ion of top4) {
+      const t = fragMap[ion];
+      if (t == null) continue;
+      for (let i = 0; i < mzs.length; i++) {
+        if (Math.abs(mzs[i] - t) <= 0.8) { n++; break; }
+      }
+    }
+    return n;
+  }
+
+  // Highest dot product among replicates that also show at least
+  // MIN_VISIBLE_IONS dot product ions in the merged spectrum. Skyline's
+  // ion_count comes from chromatogram integration and can exceed the ions
+  // that survive into the plotted scans, so this keeps the displayed
+  // spectrum consistent with the reported statistics.
+  function search(minVisible) {
+    let t_ = null, r_ = null, dpBest = -Infinity;
+    TISSUES.forEach(tissue => {
+      const reps = pep.tissues?.[tissue] || {};
+      Object.entries(reps).forEach(([rep, spec]) => {
+        if (((spec.n_scans || 0) + (spec.n_outside_scans || 0)) === 0) return;
+        if ((spec.ion_count || 0) < 3) return;
+        if (Math.abs(spec.ppm_error || 999) >= 15) return;
+        if (visibleTop4(spec) < minVisible) return;
+        const dp = spec.dot_product != null ? spec.dot_product : -1;
+        if (dp > dpBest) { dpBest = dp; t_ = tissue; r_ = rep; }
+      });
+    });
+    return [t_, r_];
+  }
+
+  [bestTissue, bestRep] = search(MIN_VISIBLE_IONS);
+  if (!bestTissue) [bestTissue, bestRep] = search(0);
+
+  // Fallback: any detectable replicate
+  if (!bestTissue) {
+    TISSUES.forEach(tissue => {
+      if (bestTissue) return;
+      const reps = pep.tissues?.[tissue] || {};
+      Object.entries(reps).forEach(([rep, spec]) => {
+        if (!bestTissue && ((spec.n_scans || 0) + (spec.n_outside_scans || 0)) > 0 && spec.is_real_detection) {
+          bestTissue = tissue; bestRep = rep;
+        }
+      });
+    });
+  }
+
+  // Fallback: first tissue with any data
+  if (!bestTissue) {
+    TISSUES.forEach(tissue => {
+      if (bestTissue) return;
+      const reps = pep.tissues?.[tissue] || {};
+      if (Object.keys(reps).length > 0) bestTissue = tissue;
+    });
+  }
+
+  buildTissueTabs(bestTissue, bestRep);
+}
+
+// ── Tissue tabs ────────────────────────────────────────────────────────────
+function buildTissueTabs(preselectedTissue, preselectedRep) {
+  const container = document.getElementById("tissue-tabs");
+  container.innerHTML = "";
+  if (!state.peptide) return;
+
+  const pep = DATA[state.peptide];
+  let firstAvailable = null;
+
+  TISSUES.forEach(tissue => {
+    const hasData = pep.tissues && pep.tissues[tissue] && Object.keys(pep.tissues[tissue]).length > 0;
+    const isConfirmed = hasData && Object.values(pep.tissues[tissue]).some(s => s.is_real_detection === true);
+
+    const btn = document.createElement("button");
+    btn.className = "tab-btn" + (!hasData ? " no-data" : "");
+    btn.textContent = tissue;
+    btn.dataset.confirmed = isConfirmed ? "true" : "false";
+    btn.dataset.hasData = hasData ? "true" : "false";
+
+    if (hasData) {
+      if (isConfirmed) {
+        btn.style.borderColor = "#10b981";
+        btn.style.color = "#059669";
+        btn.style.fontWeight = "600";
+      } else {
+        btn.style.borderColor = "#94a3b8";
+        btn.style.color = "#94a3b8";
+      }
+    }
+
+    btn.onclick = () => { if (hasData) selectTissue(tissue); };
+    container.appendChild(btn);
+    if (hasData && !firstAvailable) firstAvailable = tissue;
+  });
+
+  const tissueToSelect = preselectedTissue || firstAvailable;
+  if (tissueToSelect) selectTissue(tissueToSelect, preselectedRep);
+}
+
+// ── Select tissue ──────────────────────────────────────────────────────────
+function selectTissue(tissue, preselectedRep) {
+  state.tissue = tissue;
+
+  // Update tab styles -- restore original colors when deactivating
+  document.querySelectorAll(".tab-btn").forEach(b => {
+    const isActive = b.textContent === tissue;
+    const isConfirmed = b.dataset.confirmed === "true";
+    const hasData = b.dataset.hasData === "true";
+    b.classList.toggle("active", isActive);
+    if (isActive) {
+      b.style.background = "#4f46e5";
+      b.style.borderColor = "#4f46e5";
+      b.style.color = "white";
+      b.style.fontWeight = "600";
+    } else if (hasData) {
+      b.style.background = "";
+      if (isConfirmed) {
+        b.style.borderColor = "#10b981";
+        b.style.color = "#059669";
+        b.style.fontWeight = "600";
+      } else {
+        b.style.borderColor = "#94a3b8";
+        b.style.color = "#94a3b8";
+        b.style.fontWeight = "";
+      }
+    } else {
+      b.style.background = "";
+      b.style.borderColor = "";
+      b.style.color = "";
+      b.style.fontWeight = "";
+    }
+  });
+
+  const pep = DATA[state.peptide];
+  const tissueData = pep.tissues[tissue] || {};
+
+  // Find best rep: prefer detectable reps first, then highest dot product
+  let bestRep = null, bestDp = -Infinity;
+  // First pass: detectable reps only
+  Object.entries(tissueData).forEach(([rep, spec]) => {
+    if (((spec.n_scans || 0) + (spec.n_outside_scans || 0)) === 0 || !spec.is_real_detection) return;
+    const dp = spec.dot_product != null ? spec.dot_product : -1;
+    if (dp > bestDp) { bestDp = dp; bestRep = rep; }
+  });
+  // Second pass: any rep with scans if no detectable found
+  if (!bestRep) {
+    Object.entries(tissueData).forEach(([rep, spec]) => {
+      if (!bestRep && ((spec.n_scans || 0) + (spec.n_outside_scans || 0)) > 0) bestRep = rep;
+    });
+  }
+
+  buildRepButtons(tissue, preselectedRep || bestRep);
+}
+
+// ── Replicate buttons ──────────────────────────────────────────────────────
+function buildRepButtons(tissue, autoRep) {
+  const container = document.getElementById("rep-btns");
+  container.innerHTML = "";
+  if (!state.peptide || !tissue) return;
+
+  const pep = DATA[state.peptide];
+  const tissueData = pep.tissues[tissue] || {};
+
+  // Find best rep: detectable first, then highest dot product
+  let bestRep = null, bestDp = -Infinity;
+  Object.entries(tissueData).forEach(([rep, spec]) => {
+    if (((spec.n_scans || 0) + (spec.n_outside_scans || 0)) === 0 || !spec.is_real_detection) return;
+    const dp = spec.dot_product != null ? spec.dot_product : -1;
+    if (dp > bestDp) { bestDp = dp; bestRep = rep; }
+  });
+  if (!bestRep) {
+    Object.entries(tissueData).forEach(([rep, spec]) => {
+      if (!bestRep && ((spec.n_scans || 0) + (spec.n_outside_scans || 0)) > 0) bestRep = rep;
+    });
+  }
+
+  ["1","2","3"].forEach(rep => {
+    const hasData = !!tissueData[rep];
+    const hasScans = hasData && (((tissueData[rep].n_scans || 0) + (tissueData[rep].n_outside_scans || 0)) > 0);
+    const isDetectable = hasData && tissueData[rep].is_real_detection === true;
+    const btn = document.createElement("button");
+    btn.className = "rep-btn" + (!hasScans ? " no-data" : "");
+    btn.textContent = `Rep ${rep}`;
+    btn.style.opacity = hasScans ? "1" : "0.35";
+    btn.style.cursor = hasScans ? "pointer" : "not-allowed";
+
+    // Green border for detectable reps
+    if (isDetectable) {
+      btn.style.borderColor = "#10b981";
+      btn.style.color = "#059669";
+    }
+
+    if (hasScans && rep === bestRep) {
+      btn.style.fontWeight = "700";
+    }
+    btn.onclick = () => { if (hasScans) selectRep(rep); };
+    container.appendChild(btn);
+  });
+
+  selectRep(autoRep || bestRep);
+}
+
+// ── Select replicate ───────────────────────────────────────────────────────
+function selectRep(rep) {
+  state.rep = rep;
+  document.querySelectorAll(".rep-btn").forEach(b => {
+    b.classList.toggle("active", b.textContent.includes(`Rep ${rep}`));
+  });
+  renderPlot();
+}
+
+// ── Render mirror plot ─────────────────────────────────────────────────────
+function renderPlot() {
+  const wrap = document.getElementById("plot-wrap");
+
+  if (!state.peptide || !state.tissue || !state.rep) {
+    wrap.innerHTML = '<div class="empty-state">Select a tissue and replicate.</div>';
+    return;
+  }
+
+  const pep = DATA[state.peptide];
+  const stdSpec   = pep.standard;
+  const tissSpec  = pep.tissues?.[state.tissue]?.[state.rep];
+  const top4      = new Set(pep.top4_ions || []);
+  const fragMzMap = pep.frag_mz_map || {};
+
+  if (!stdSpec || !tissSpec) {
+    wrap.innerHTML = '<div class="empty-state">No spectrum data available for this selection.</div>';
+    return;
+  }
+
+  if (((tissSpec.n_scans || 0) + (tissSpec.n_outside_scans || 0)) === 0) {
+    wrap.innerHTML = '<div class="empty-state">No MS2 scans found for this replicate within the RT window.</div>';
+    return;
+  }
+
+  // Update stats
+  updateStats(tissSpec);
+
+  // Build plot -- tissue on top, standard on bottom
+  wrap.innerHTML = "";
+
+  // Peptide header with PEP name
+  const pepHeader = document.createElement("div");
+  pepHeader.style.cssText = "font-size:0.95rem;font-weight:700;color:#1a1a2e;margin-bottom:6px;";
+  pepHeader.textContent = `${pep.pep_name || ""} \u2014 ${formatSeq(state.peptide)}`;
+  wrap.appendChild(pepHeader);
+
+  const tissLabel = document.createElement("div");
+  tissLabel.className = "plot-label";
+  const repDetected = tissSpec.is_real_detection === true;
+  const detectedNote = repDetected ? " \u2713 Detected" : " \u2014 Not detected";
+  const totalScans = (tissSpec.n_scans || 0) + (tissSpec.n_outside_scans || 0);
+  const outsideOnly = (tissSpec.n_scans || 0) === 0 && totalScans > 0;
+  tissLabel.textContent = `${state.tissue} \u2014 Rep ${state.rep} (${totalScans} scans${outsideOnly ? " \u2014 neighbouring scans only" : ""}, avg RT ${tissSpec.mean_rt?.toFixed(2)} min)${detectedNote}`;
+  tissLabel.style.color = repDetected ? "#059669" : "#94a3b8";
+  wrap.appendChild(tissLabel);
+
+  // Compute shared x range from fragment ion m/z values (from fragMzMap)
+  // so both spectra are perfectly aligned on the same axis
+  const fragMzValues = Object.values(fragMzMap);
+  let sharedMzRange;
+  if (fragMzValues.length > 0) {
+    const pad = (Math.max(...fragMzValues) - Math.min(...fragMzValues)) * 0.15 + 50;
+    sharedMzRange = [Math.min(...fragMzValues) - pad, Math.max(...fragMzValues) + pad];
+  } else {
+    const allMz = [...(stdSpec.mz || []), ...(tissSpec.mz || [])];
+    sharedMzRange = allMz.length
+      ? [Math.min(...allMz) * 0.98, Math.max(...allMz) * 1.02]
+      : [100, 1500];
+  }
+
+  const svgTiss = buildSpectrumSVG(tissSpec, top4, fragMzMap, "top", sharedMzRange);
+  wrap.appendChild(svgTiss);
+
+  const stdLabel = document.createElement("div");
+  stdLabel.className = "plot-label";
+  stdLabel.style.marginTop = "2px";
+  stdLabel.textContent = `Standard (1 \u03bcM) \u2014 ${pep.pep_name || ""} \u2014 ${formatSeq(state.peptide)}`;
+  wrap.appendChild(stdLabel);
+
+  const svgStd = buildSpectrumSVG(stdSpec, top4, fragMzMap, "bottom", sharedMzRange);
+  wrap.appendChild(svgStd);
+}
+
+// ── Build a single spectrum SVG ───────────────────────────────────────────
+function buildSpectrumSVG(spec, top4Set, fragMzMap, direction, sharedMzRange) {
+  const W = 1200, H = 200;
+  const PAD = { left: 60, right: 20, top: 20, bottom: 30 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const mzArr  = spec.mz  || [];
+  const intArr = spec.intensity || [];
+
+  // Fragment ion matching -- prioritizes top 4 ions, then returns closest match
+  const fragTol = 0.8;
+  function matchIon(mz) {
+    let bestIon = null, bestDist = Infinity;
+    // First pass: top 4 ions only
+    for (const [ion, ionMz] of Object.entries(fragMzMap)) {
+      if (!top4Set.has(ion)) continue;
+      const dist = Math.abs(mz - ionMz);
+      if (dist < fragTol && dist < bestDist) {
+        bestDist = dist;
+        bestIon = ion;
+      }
+    }
+    if (bestIon) return bestIon;
+    // Second pass: any matched ion
+    bestDist = Infinity;
+    for (const [ion, ionMz] of Object.entries(fragMzMap)) {
+      const dist = Math.abs(mz - ionMz);
+      if (dist < fragTol && dist < bestDist) {
+        bestDist = dist;
+        bestIon = ion;
+      }
+    }
+    return bestIon;
+  }
+
+  // ── Priority-based ion assignment ─────────────────────────────────────────
+  // When two ions have theoretical m/z within fragTol of each other,
+  // the top 4 ion always wins. Peaks are assigned to ions in priority order.
+
+  // Step 1: Merge ions whose theoretical m/z are within fragTol -- 
+  // create a canonical ion map where overlapping ions are collapsed to
+  // whichever has higher priority (top4 > non-top4, then closest)
+  const canonicalIon = {}; // ion -> canonical ion label to display as
+  const ionMzList = Object.entries(fragMzMap);
+
+  ionMzList.forEach(([ionA, mzA]) => {
+    if (canonicalIon[ionA]) return; // already assigned
+    canonicalIon[ionA] = ionA; // default: maps to itself
+
+    // Find any other ions within fragTol
+    ionMzList.forEach(([ionB, mzB]) => {
+      if (ionA === ionB) return;
+      if (Math.abs(mzA - mzB) < fragTol) {
+        // They overlap -- top4 wins; if both top4 or both not, keep lower mz label
+        const aIsTop4 = top4Set.has(ionA);
+        const bIsTop4 = top4Set.has(ionB);
+        if (bIsTop4 && !aIsTop4) {
+          canonicalIon[ionA] = ionB; // ionA maps to ionB (top4)
+        } else if (!bIsTop4 && aIsTop4) {
+          canonicalIon[ionB] = ionA; // ionB maps to ionA (top4)
+        }
+        // If both same priority, leave as-is (each maps to itself)
+      }
+    });
+  });
+
+  // Step 2: Assign each spectrum peak to its best ion (top4 priority)
+  const ionSummed = {}; // canonical ion label -> summed intensity
+  const unmatchedPeaks = [];
+
+  mzArr.forEach((mz, idx) => {
+    const intensity = intArr[idx];
+    const ionLabel = matchIon(mz);
+    if (ionLabel) {
+      const canon = canonicalIon[ionLabel] || ionLabel;
+      ionSummed[canon] = (ionSummed[canon] || 0) + intensity;
+    } else {
+      unmatchedPeaks.push({ mz, intensity });
+    }
+  });
+
+  // Step 3: Build display peaks at theoretical m/z of canonical ion
+  const displayPeaks = [];
+  Object.entries(ionSummed).forEach(([ion, intensity]) => {
+    const theorMz = fragMzMap[ion];
+    if (theorMz != null) {
+      displayPeaks.push({ mz: theorMz, intensity, ion, isMatched: true, isTop4: top4Set.has(ion) });
+    }
+  });
+  unmatchedPeaks.forEach(({ mz, intensity }) => {
+    displayPeaks.push({ mz, intensity, ion: null, isMatched: false, isTop4: false });
+  });
+
+  // Y scaling based on top 4 summed intensities
+  const top4Intensities = displayPeaks
+    .filter(p => p.isTop4)
+    .map(p => p.intensity);
+  const top4MaxInt = top4Intensities.length
+    ? Math.max(...top4Intensities) * 1.15
+    : (intArr.length ? Math.max(...intArr) : 1);
+  const yMax = top4MaxInt || 1;
+
+  // Use shared x range so both spectra align perfectly
+  const mzMin = sharedMzRange[0];
+  const mzMax = sharedMzRange[1];
+
+  const xScale = mz => PAD.left + ((mz - mzMin) / (mzMax - mzMin)) * plotW;
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("class", "spectrum");
+  svg.style.maxHeight = "180px";
+
+  // Clip path so blown-out peaks don't overflow
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const clip = document.createElementNS("http://www.w3.org/2000/svg", "clipPath");
+  clip.setAttribute("id", `clip-${direction}`);
+  const clipRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  clipRect.setAttribute("x", PAD.left); clipRect.setAttribute("y", PAD.top);
+  clipRect.setAttribute("width", plotW); clipRect.setAttribute("height", plotH);
+  clip.appendChild(clipRect);
+  defs.appendChild(clip);
+  svg.appendChild(defs);
+
+  // Baseline
+  const baseline = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  baseline.setAttribute("x1", PAD.left); baseline.setAttribute("x2", W - PAD.right);
+  const baseY = direction === "top" ? H - PAD.bottom : PAD.top;
+  baseline.setAttribute("y1", baseY); baseline.setAttribute("y2", baseY);
+  baseline.setAttribute("stroke", "#cbd5e1"); baseline.setAttribute("stroke-width", "1");
+  svg.appendChild(baseline);
+
+  // Y axis
+  const yAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  yAxis.setAttribute("x1", PAD.left); yAxis.setAttribute("x2", PAD.left);
+  yAxis.setAttribute("y1", PAD.top); yAxis.setAttribute("y2", H - PAD.bottom);
+  yAxis.setAttribute("stroke", "#e2e8f0"); yAxis.setAttribute("stroke-width", "1");
+  svg.appendChild(yAxis);
+
+  // Y label
+  const yLbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  yLbl.setAttribute("x", 12); yLbl.setAttribute("y", H / 2);
+  yLbl.setAttribute("transform", `rotate(-90, 12, ${H/2})`);
+  yLbl.setAttribute("text-anchor", "middle");
+  yLbl.setAttribute("font-size", "9");
+  yLbl.setAttribute("fill", "#94a3b8");
+  yLbl.textContent = "Intensity";
+  svg.appendChild(yLbl);
+
+  // X axis ticks
+  const nTicks = 8;
+  for (let i = 0; i <= nTicks; i++) {
+    const mz = mzMin + (mzMax - mzMin) * (i / nTicks);
+    const x = xScale(mz);
+    if (x < PAD.left || x > W - PAD.right) continue;
+    const tick = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    tick.setAttribute("x1", x); tick.setAttribute("x2", x);
+    tick.setAttribute("y1", H - PAD.bottom); tick.setAttribute("y2", H - PAD.bottom + 4);
+    tick.setAttribute("stroke", "#cbd5e1"); tick.setAttribute("stroke-width", "1");
+    svg.appendChild(tick);
+    const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    lbl.setAttribute("x", x); lbl.setAttribute("y", H - PAD.bottom + 14);
+    lbl.setAttribute("text-anchor", "middle");
+    lbl.setAttribute("font-size", "8");
+    lbl.setAttribute("fill", "#94a3b8");
+    lbl.textContent = Math.round(mz);
+    svg.appendChild(lbl);
+  }
+
+  // X axis label
+  const xLbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  xLbl.setAttribute("x", PAD.left + plotW / 2);
+  xLbl.setAttribute("y", H - 2);
+  xLbl.setAttribute("text-anchor", "middle");
+  xLbl.setAttribute("font-size", "9");
+  xLbl.setAttribute("fill", "#94a3b8");
+  xLbl.textContent = "m/z";
+  svg.appendChild(xLbl);
+
+  // Peaks group with clip path
+  const peaksG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  peaksG.setAttribute("clip-path", `url(#clip-${direction})`);
+
+  displayPeaks.forEach(({ mz, intensity, ion, isMatched, isTop4 }) => {
+    if (mz < mzMin || mz > mzMax) return;
+
+    const x = xScale(mz);
+    let color = "#cbd5e1";
+    if (isTop4)    color = "#4f46e5";
+    if (isMatched && !isTop4) color = "#93c5fd";
+
+    const lineH = Math.min((intensity / yMax) * plotH, plotH);
+
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", x); line.setAttribute("x2", x);
+    if (direction === "top") {
+      line.setAttribute("y1", H - PAD.bottom);
+      line.setAttribute("y2", H - PAD.bottom - lineH);
+    } else {
+      line.setAttribute("y1", PAD.top);
+      line.setAttribute("y2", PAD.top + lineH);
+    }
+    line.setAttribute("stroke", color);
+    line.setAttribute("stroke-width", isTop4 ? "2.5" : isMatched ? "1.5" : "1");
+    line.setAttribute("opacity", isTop4 ? "1" : isMatched ? "0.8" : "0.35");
+    line.style.cursor = "pointer";
+
+    line.addEventListener("mousemove", e => {
+      const tip = document.getElementById("tooltip");
+      tip.style.display = "block";
+      tip.style.left = (e.clientX + 12) + "px";
+      tip.style.top  = (e.clientY - 10) + "px";
+      const pct = ((intensity / yMax) * 100).toFixed(1);
+      const catLabel = isTop4 ? "Top 4 ion" : isMatched ? "Matched ion" : "Unmatched";
+      const clipped = intensity > yMax ? " (clipped)" : "";
+      tip.innerHTML = ion
+        ? `<strong>${ion}</strong> (${catLabel})<br>m/z: ${mz.toFixed(1)}<br>Rel. intensity: ${pct}%${clipped}`
+        : `m/z: ${mz.toFixed(1)}<br>Rel. intensity: ${pct}%${clipped}<br><em>Co-fragmentation</em>`;
+    });
+    line.addEventListener("mouseleave", () => {
+      document.getElementById("tooltip").style.display = "none";
+    });
+    peaksG.appendChild(line);
+  });
+
+  svg.appendChild(peaksG);
+
+  // Ion labels -- one per ion at theoretical m/z, top 4 bold indigo, others light blue
+  displayPeaks.filter(p => p.isMatched).forEach(({ mz, intensity, ion, isTop4 }) => {
+    if (mz < mzMin || mz > mzMax) return;
+    const x = xScale(mz);
+    const lineH = Math.min((intensity / yMax) * plotH, plotH - 2);
+    const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    const labelY = direction === "top"
+      ? H - PAD.bottom - lineH - 4
+      : PAD.top + lineH + 10;
+    lbl.setAttribute("x", x);
+    lbl.setAttribute("y", Math.max(PAD.top + 10, Math.min(H - PAD.bottom - 2, labelY)));
+    lbl.setAttribute("text-anchor", "middle");
+    lbl.setAttribute("font-size", isTop4 ? "9" : "8");
+    lbl.setAttribute("font-weight", isTop4 ? "bold" : "normal");
+    lbl.setAttribute("fill", isTop4 ? "#4f46e5" : "#93c5fd");
+    lbl.setAttribute("opacity", isTop4 ? "1" : "0.9");
+    lbl.textContent = ion;
+    svg.appendChild(lbl);
+  });
+
+  return svg;
+}
+
+// ── Update stats bar ───────────────────────────────────────────────────────
+function updateStats(spec) {
+  const dp   = spec.dot_product;
+  const ppm  = spec.ppm_error;
+  const scans = spec.n_scans;
+
+  // Dot product coloring follows the two-tier detection criteria:
+  //   primary   -- dp >= 0.85
+  //   secondary -- dp >= 0.70 AND another replicate of this peptide clears 0.85
+  //                (tissue-confirmed)
+  const DP_PRIMARY   = 0.85;
+  const DP_SECONDARY = 0.70;
+
+  // Is this peptide tissue-confirmed? (any replicate with dp > primary)
+  let tissueConfirmed = false;
+  const pepData = DATA[state.peptide];
+  if (pepData && pepData.tissues) {
+    outer:
+    for (const reps of Object.values(pepData.tissues)) {
+      for (const s of Object.values(reps)) {
+        if ((s.dot_product || 0) >= DP_PRIMARY) { tissueConfirmed = true; break outer; }
+      }
+    }
+  }
+
+  const dpEl = document.getElementById("stat-dp");
+  if (dp != null) {
+    // Use the stored detection call, which is the authoritative result of the
+    // scoring pipeline (criteria applied to the 2-decimal reported value).
+    const good = (spec.is_real_detection != null)
+      ? spec.is_real_detection
+      : (dp >= DP_PRIMARY || (tissueConfirmed && dp >= DP_SECONDARY));
+    dpEl.textContent = dp.toFixed(2);
+    dpEl.style.color = good ? "#10b981" : "#ef4444";
+    dpEl.style.fontWeight = "700";
+    dpEl.title = good
+      ? (dp >= DP_PRIMARY
+          ? "Meets primary criterion (dot product >= 0.85)"
+          : "Meets secondary criterion (dot product >= 0.70, tissue-confirmed elsewhere)")
+      : "Below detection threshold";
+  } else {
+    dpEl.textContent = "--";
+    dpEl.style.color = "";
+    dpEl.title = "";
+  }
+
+  // Precursor accuracy: green if abs <= 15 ppm, red if > 15 ppm -- no +/- symbol
+  const ppmEl = document.getElementById("stat-ppm");
+  if (ppm != null) {
+    const good = Math.abs(ppm) <= 15;
+    ppmEl.textContent = ppm.toFixed(1) + " ppm";
+    ppmEl.style.color = good ? "#10b981" : "#ef4444";
+    ppmEl.style.fontWeight = "700";
+  } else {
+    ppmEl.textContent = "--";
+    ppmEl.style.color = "";
+  }
+
+  const totalScans = (scans || 0) + (spec.n_outside_scans || 0);
+  document.getElementById("stat-scans").textContent = scans != null ? totalScans : "--";
+  document.getElementById("stat-rt").textContent =
+    spec.mean_rt != null ? `${spec.mean_rt.toFixed(2)} min` : "--";
+}
+
+// Auto-initialize with embedded data
+buildPeptideList();
+</script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+---
+title: "Amidated Peptide Tissue Panel Analysis"
+author: "Amanda Wiggenhorn"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Overview
+
+Semi-targeted peptidomics of endogenous amidated peptides across a mouse tissue
+panel (N = 3 per tissue). Peptide identity is confirmed by MS/MS spectral
+matching against authentic synthetic standards, using dot product similarity,
+precursor mass accuracy and fragment ion count.
+
+Detection is reported as a binary call per replicate. No concentrations are
+derived.
+
+Accompanies Wiggenhorn *et al.*, "Global profiling of peptide amidation to
+discover bioactive fragments of the secretome."
+
+### Input
+
+A single file: **Supplemental Table 2**, as published with the paper.
+
+| Sheet | Supplies |
+|---|---|
+| `Ion Integrations` | Skyline peak areas for the 1 µM synthetic standard and every tissue replicate |
+| `spectral valid` | precursor mass accuracy per replicate; also used to verify the recomputation |
+| `Detected Peptides` | peptide naming for figure labels |
+
+Scores and detection calls are recomputed from those areas; the checks in
+sections 4 and 6 compare the result to the published values.
+
+The `Ion Integrations` sheet contains the precursor plus the fragment ions used
+for scoring, so the fingerprint is taken from it and the scores recomputed.
+Re-deriving the fingerprint itself requires the full Skyline transition export,
+which contains all monitored ions.
+
+---
+
+# 1. Configuration
+
+```{r config}
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(gplots)
+
+PATH_TABLE_S2 <- "data/Supplemental_Table_2.xlsx"
+OUT_DIR       <- "results"
+dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
+
+# ── Detection criteria (Methods) ─────────────────────────────────────────────
+DOT_PRODUCT_PRIMARY   <- 0.85  # primary threshold
+DOT_PRODUCT_SECONDARY <- 0.70  # relaxed threshold, once a peptide is confirmed
+PPM_THRESHOLD         <- 15    # precursor mass accuracy (ppm)
+ION_COUNT_PRIMARY     <- 3     # fingerprint ions, primary criterion
+ION_COUNT_SECONDARY   <- 2     # fingerprint ions, relaxed criterion
+DP_DIGITS             <- 2     # dot products are reported, and criteria
+                               # applied, at 2 decimal places
+
+# For TRH, a tripeptide, a1, b1 and y1 fall below the m/z 120 acquisition floor
+# and y2 gives no signal in the synthetic standard; b2 and a2 are the observable
+# ions.
+MIN_IONS_OVERRIDE <- c("TRH" = 2)
+
+TISSUE_ORDER <- c("BAT", "Brain", "Ileum", "Heart", "Kidney", "Liver",
+                  "Lung", "Pancreas", "Quad", "Spleen", "iWAT", "plasma")
+```
+
+---
+
+# 2. Read Supplemental Table 2
+
+```{r read}
+# Peak areas. Header on row 1.
+integrations <- read_excel(PATH_TABLE_S2, sheet = "Ion Integrations") %>%
+  transmute(
+    peptide   = `PEP Name`,
+    is_std    = grepl("^Standard", `Sample Type`),
+    replicate = Replicate,
+    tissue    = Tissue,
+    ion       = `Fragment Ion`,
+    area      = ifelse(is.na(as.numeric(Area)), 0, as.numeric(Area))
+  )
+
+# Precursor mass accuracy, and the published values used for verification.
+# Header on row 2, hence skip = 1.
+published <- read_excel(PATH_TABLE_S2, sheet = "spectral valid", skip = 1) %>%
+  transmute(
+    peptide   = `PEP Name`,
+    tissue    = Tissue,
+    replicate = Replicate,
+    ppm       = as.numeric(`Precursor Accuracy (ppm)`),
+    pub_dp    = as.numeric(`Dot Product`),
+    pub_ions  = as.integer(`Ion Count`),
+    pub_call  = `Is Detected` == "Yes"
+  )
+
+cat("Integration rows:", nrow(integrations),
+    "| replicate records:", nrow(published),
+    "| peptides:", n_distinct(integrations$peptide), "\n")
+```
+
+---
+
+# 3. Fingerprint ions
+
+Each peptide is scored on a fixed set of fragment ions taken from its 1 µM
+synthetic standard: the most intense qualifying ions, each more than 0.5 Da —
+the fragment matching tolerance — from every ion already selected. Selection
+uses the standard alone.
+
+Ion types cover a, b and y ions and their ammonia-loss forms, consistent with
+HCD fragmentation. Ion-type labels annotate matched m/z channels and are not
+inputs to the score.
+
+```{r fingerprint}
+standard_areas <- integrations %>%
+  filter(is_std, ion != "precursor") %>%
+  select(peptide, ion, std_area = area)
+
+fingerprint <- standard_areas %>%
+  group_by(peptide) %>%
+  summarise(ions = paste(ion, collapse = ", "),
+            n_ions = n(), .groups = "drop")
+
+cat("Peptides:", nrow(fingerprint),
+    "| ions per peptide:", paste(sort(unique(fingerprint$n_ions)), collapse = ", "), "\n")
+
+stopifnot(all(standard_areas$std_area > 0))
+```
+
+---
+
+# 4. Dot product
+
+$$\text{dot product} = \frac{\sum A_i S_i}{\sqrt{\sum A_i^2}\;\sqrt{\sum S_i^2}}$$
+
+$A_i$ = peak area in the sample, $S_i$ = peak area in the standard, summed over
+the fingerprint.
+
+```{r dot_product}
+scores <- integrations %>%
+  filter(!is_std, ion != "precursor") %>%
+  inner_join(standard_areas, by = c("peptide", "ion")) %>%
+  group_by(peptide, tissue, replicate) %>%
+  summarise(
+    ion_count   = sum(area > 0),
+    dot_product = round(sum(area * std_area) /
+                        (sqrt(sum(area^2)) * sqrt(sum(std_area^2))), DP_DIGITS),
+    .groups = "drop"
+  )
+
+# Compare with the published values
+check <- scores %>% inner_join(published, by = c("peptide", "tissue", "replicate"))
+stopifnot(nrow(check) == nrow(published))
+cat("dot products reproduced:", sum(check$dot_product == check$pub_dp |
+                                    (is.na(check$dot_product) & is.na(check$pub_dp))),
+    "/", nrow(check), "\n")
+cat("ion counts reproduced  :", sum(check$ion_count == check$pub_ions),
+    "/", nrow(check), "\n")
+```
+
+---
+
+# 5. Detection criteria
+
+Two tiers. A peptide is **confirmed** if any replicate reaches the primary
+criterion; once confirmed, further replicates of that peptide may qualify under
+the relaxed criterion. A peptide never confirmed has no detections at all.
+
+- **Primary:** dot product ≥ `r DOT_PRODUCT_PRIMARY`, |ppm| < `r PPM_THRESHOLD`, ≥ `r ION_COUNT_PRIMARY` ions
+- **Relaxed:** confirmed peptide, dot product ≥ `r DOT_PRODUCT_SECONDARY`, |ppm| < `r PPM_THRESHOLD`, ≥ `r ION_COUNT_SECONDARY` ions
+
+```{r detection}
+results <- scores %>%
+  left_join(select(published, peptide, tissue, replicate, ppm, pub_call),
+            by = c("peptide", "tissue", "replicate")) %>%
+  mutate(
+    min_ions = ifelse(peptide %in% names(MIN_IONS_OVERRIDE),
+                      MIN_IONS_OVERRIDE[peptide], ION_COUNT_PRIMARY),
+    ppm_ok   = !is.na(ppm) & abs(ppm) < PPM_THRESHOLD
+  ) %>%
+  group_by(peptide) %>%
+  mutate(
+    confirmed = any(!is.na(dot_product) & dot_product >= DOT_PRODUCT_PRIMARY &
+                    ppm_ok & ion_count >= min_ions),
+    is_real_detection = confirmed & !is.na(dot_product) & ppm_ok &
+      ((dot_product >= DOT_PRODUCT_PRIMARY   & ion_count >= min_ions) |
+       (dot_product >= DOT_PRODUCT_SECONDARY &
+        ion_count >= pmax(ION_COUNT_SECONDARY, min_ions - 1)))
+  ) %>%
+  ungroup() %>%
+  select(-min_ions, -ppm_ok)
+
+cat("detection calls reproduced:",
+    sum(results$is_real_detection == results$pub_call), "/", nrow(results), "\n")
+```
+
+---
+
+# 6. Final panel
+
+```{r panel}
+detected <- results %>% filter(is_real_detection)
+
+cat("peptides:",    n_distinct(detected$peptide),
+    "| detections:", nrow(detected), "\n")
+
+stopifnot(
+  all(results$is_real_detection == results$pub_call),
+  n_distinct(detected$peptide) == 62,
+  nrow(detected) == 786
+)
+```
+
+---
+
+# 7. Replicate count heat map (Fig. 1e)
+
+Number of biological replicates (0–3) in which MS/MS spectral identity was
+confirmed, per peptide per tissue.
+
+```{r heatmap, fig.width=10, fig.height=14}
+replicate_counts <- results %>%
+  filter(peptide %in% detected$peptide, tissue %in% TISSUE_ORDER) %>%
+  group_by(peptide, tissue) %>%
+  summarise(n_detected = sum(is_real_detection), .groups = "drop") %>%
+  complete(peptide = unique(peptide), tissue = TISSUE_ORDER,
+           fill = list(n_detected = 0)) %>%
+  mutate(tissue = factor(tissue, levels = TISSUE_ORDER))
+
+rc_wide <- replicate_counts %>%
+  pivot_wider(names_from = tissue, values_from = n_detected, values_fill = 0) %>%
+  as.data.frame()
+rownames(rc_wide) <- rc_wide$peptide
+rc_wide$peptide   <- NULL
+rc_wide   <- rc_wide[, TISSUE_ORDER[TISSUE_ORDER %in% colnames(rc_wide)]]
+rc_matrix <- data.matrix(rc_wide)
+
+stopifnot(nrow(rc_matrix) == 62, ncol(rc_matrix) == 12, sum(rc_matrix) == 786)
+
+det_colors <- c(
+  "grey94",                                                                          # 0
+  rgb(0.1699716714 * 0.4 + 0.6, 0.3342776204 * 0.4 + 0.6, 0.4957507082 * 0.4 + 0.6), # 1
+  rgb(0.1699716714 * 0.7 + 0.3, 0.3342776204 * 0.7 + 0.3, 0.4957507082 * 0.7 + 0.3), # 2
+  rgb(0.1699716714,             0.3342776204,             0.4957507082)              # 3
+)
+
+pdf(file.path(OUT_DIR, "Fig1e_detection_heatmap.pdf"), width = 10, height = 14)
+heatmap.2(
+  rc_matrix,
+  col = det_colors, breaks = c(-0.5, 0.5, 1.5, 2.5, 3.5),
+  trace = "none", density.info = "none", scale = "none",
+  Rowv = TRUE, Colv = TRUE, dendrogram = "both",
+  margins = c(6, 8), cexRow = 0.25, cexCol = 0.6,
+  key = TRUE, key.title = "Replicates\nDetected",
+  key.xlab = "0          1          2          3",
+  xlab = "", ylab = ""
+)
+dev.off()
+```
+
+---
+
+# 8. Detection summary
+
+```{r summary}
+per_peptide <- detected %>% count(peptide, name = "n_detections")
+per_tissue  <- detected %>% count(tissue,  name = "n_detections") %>%
+  arrange(desc(n_detections))
+
+cat("detections per peptide — median:", median(per_peptide$n_detections),
+    " range:", min(per_peptide$n_detections), "-",
+    max(per_peptide$n_detections), "\n\n")
+print(as.data.frame(per_tissue))
+```
+
+---
+
+# 9. Export
+
+```{r export}
+write.csv(results,          file.path(OUT_DIR, "detection_calls.csv"),  row.names = FALSE)
+write.csv(fingerprint,      file.path(OUT_DIR, "fingerprint_ions.csv"), row.names = FALSE)
+write.csv(replicate_counts, file.path(OUT_DIR, "replicate_counts.csv"), row.names = FALSE)
+
+cat("Outputs written to", normalizePath(OUT_DIR), "\n")
+```
+
+---
+
+# Session info
+
+```{r session_info}
+sessionInfo()
+```
