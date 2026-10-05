@@ -80,54 +80,6 @@ dp = sum(A_sample * A_standard) / (||A_sample|| * ||A_standard||)
 
 All thresholds are in the CONFIG block at the top of the script.
 
-## Two tolerances, doing different jobs
-
-Easy to conflate, so stated plainly:
-
-- **0.5 Da** is the fragment mass tolerance Skyline used to extract the
-  chromatograms. It is spent before this code runs and appears nowhere in it.
-- **`MZ_TOL = 0.02` Da** is the tolerance for matching a fingerprint ion to
-  its exported transition. Both m/z come from the same file, so this only has
-  to absorb rounding. Widening it lets a neighbouring transition stand in for
-  a fingerprint ion that is absent.
-
-## Re-running from the raw export
-
-```
-python amidated_peptide_detection.py --transitions Transition_Results_final.csv
-```
-
-This redoes fingerprint **selection** as well as scoring: the five most
-abundant fragment ions in the 1 uM standard, excluding any ion whose blank
-area exceeds 10% of its standard area, and skipping any ion within 0.5 Da of
-one already chosen, since transitions closer than that are the same
-chromatographic peak. Selection used the standard and blank runs only, before
-any tissue data were examined.
-
-Only needed to reproduce the selection step. The table path gives identical
-calls because the sheet lists the ions that selection chose.
-
-Two cosmetic differences from the published table, neither affecting any
-call: the table blanks the dot product where fewer than three fingerprint
-ions were above background, and zeroes the areas for windows with no MS2
-scan at that precursor.
-
-## Notes
-
-- `FINGERPRINT_OVERRIDE` holds one manual panel, GGFSFRF (PEP-QRFP), whose
-  standard is dominated by a co-eluting contaminant; its ions were chosen
-  from manually inspected spectra.
-- PEP-ADAMTS4 yields only four separable fragment ions and is scored on a
-  four-ion fingerprint requiring 4 of 4. Peptides yielding fewer than four
-  are not assessable and are reported as undetected.
-- Replicate names: Skyline's `Gut_*` and `plasma_*` are the manuscript's
-  `Ileum_*` and `Plasma_*`. Both spellings are accepted.
-- `blank_01`, `blank_02` and `blank_03` are standard carryover and are
-  excluded; the blank filter uses `Blanks` and `Blanks1`.
-- z ions are reported as y-NH3. Measured against the matching y ion in the
-  1 uM standard, all 743 z/y pairs differ by 17.026549 Da to within 8e-7, so
-  these are classical z = y - NH3. The relabelling changes no m/z.
-
 ## Citing
 
 Please cite the paper. Supplemental Table 2 holds the data these scripts
