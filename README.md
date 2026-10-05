@@ -10,8 +10,8 @@ Two steps, one script each:
 | 1. prediction | `predict_amidated_peptides.py` | proteome FASTA | the candidate amidated peptides |
 | 2. detection | `amidated_peptide_detection.py` | Supplemental Table 2 | dot products, tiers and detection calls |
 
-Step 2 reproduces Supplemental Table 2 from the table's own integrations, so
-anyone can re-derive every call in the paper without the raw files.
+Step 2 reads nothing but the published table, so anyone can re-derive every
+call in the paper without the raw files.
 
 ## Install
 
@@ -27,13 +27,17 @@ Python 3.8 or newer.
 python amidated_peptide_detection.py Supplemental_Table_2.xlsx
 ```
 
-Reads two sheets:
+Reads three sheets:
 
-- **Ion Integrations** — the five fingerprint ions per peptide and their
-  Skyline peak areas in every replicate, plus the monoisotopic precursor and
-  its mass error
+- **Detected Peptides** — the fingerprint ion panel per peptide, from the
+  `Ions for Dot Product` column, as published and in the published order
+- **Ion Integrations** — each fingerprint ion's m/z and Skyline peak area in
+  every replicate, plus the monoisotopic precursor and its mass error
 - **Spectral Validation** — the MS1 apex difference from the synthetic
   standard
+
+If `Ions for Dot Product` is missing, the panel falls back to the ions listed
+for the 1 uM standard on Ion Integrations; both give the same calls.
 
 and writes three files:
 
@@ -79,8 +83,3 @@ dp = sum(A_sample * A_standard) / (||A_sample|| * ||A_standard||)
 ```
 
 All thresholds are in the CONFIG block at the top of the script.
-
-## Citing
-
-Please cite the paper. Supplemental Table 2 holds the data these scripts
-read; the raw files are deposited separately.
