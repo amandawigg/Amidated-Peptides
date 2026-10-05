@@ -1,97 +1,134 @@
-# Amidated Peptides
+# Global profiling of peptide amidation
 
-Code accompanying **Wiggenhorn, Lone, Svensson & Long, "Global profiling of peptide amidation to discover bioactive fragments of the secretome."**
+Code accompanying *Global profiling of peptide amidation to discover bioactive
+fragments of the secretome* (Wiggenhorn & Long).
 
-Candidate amidated peptides are predicted from primary sequence across the mouse secretome, then tested for endogenous presence against authentic synthetic standards by LC-MS/MS.
+Two steps, one script each:
 
----
+| | script | input | output |
+|---|---|---|---|
+| 1. prediction | `predict_amidated_peptides.py` | proteome FASTA | the candidate amidated peptides |
+| 2. detection | `amidated_peptide_detection.py` | Supplemental Table 2 | dot products, tiers and detection calls |
 
-## Contents
+Step 2 reproduces Supplemental Table 2 from the table's own integrations, so
+anyone can re-derive every call in the paper without the raw files.
 
-| File | Language | Produces |
-|---|---|---|
-| `predict_amidated_peptides.py` | Python | predicted amidated peptides → Table S2, "All Predicted Peptides" |
-| `tissue_panel_analysis.Rmd` | R | dot products, detection calls and Fig. 1e → Table S2, "spectral valid" |
-| `viewer/` | Python | `viewer_MSMS.html`, the interactive spectral viewer (Supplemental Data) |
-
-## Requirements
-
-**Python** ≥3.9 — `openpyxl`, `pyteomics`
-**R** ≥4.2 — `dplyr`, `tidyr`, `readxl`, `gplots`
-
-## Running
-
-```bash
-# 1. Predict candidate amidated peptides
-python predict_amidated_peptides.py
-
-# 2. Score detections and draw Fig. 1e
-Rscript -e 'rmarkdown::render("tissue_panel_analysis.Rmd")'
-
-# 3. Build the spectral viewer
-cd viewer && make
-```
-
-Steps 1 and 2 are independent. Step 3 needs the raw acquisitions from Mendeley
-(see `data/README.md`).
-
-## Data
-
-Inputs live in `data/`; see `data/README.md`. Raw LC-MS files are deposited on
-Mendeley Data (DOI: 10.17632/9wm5x5ncfb.1) and are not versioned here.
-
----
-
-## Method summary
-
-### Prediction
-
-Classically secreted proteins are scanned from the signal-peptide cleavage site
-to the C-terminus for a site of PAM-mediated amidation. Two cases are searched:
-
-- a glycine-dibasic tripeptide within the sequence — GKR, GKK, GRK or GRR
-- a terminal GR or GK, where the protein sequence ends
-
-For each site, an N-terminal cleavage position is taken as the most 3' dibasic
-pair (KR, KK, RK, RR) lying downstream of the signal peptide, or the annotated
-signal-peptide cleavage site. The predicted peptide is the sequence between
-that position and the residue preceding the glycine.
-
-`MAX_LENGTH` sets the upper bound on peptide length. The supplied value of 15
-gives the set examined experimentally; raising it gives the full predicted set.
-
-### Detection scoring
-
-Each tissue replicate is compared to an authentic synthetic standard of the
-identical sequence run in the same batch. For each peptide, 3–4 fragment ions
-are selected from the standard: the most intense qualifying ions, each more
-than 0.5 Da — the fragment matching tolerance — from every ion already chosen.
-The normalised dot product between sample and standard intensities across those
-fixed channels is:
+## Install
 
 ```
-dp = Σ(A_sample · A_standard) / ( √Σ(A_sample²) · √Σ(A_standard²) )
+pip install pandas numpy openpyxl
 ```
 
-Ion assignments cover a, b and y ions and their ammonia-loss forms, consistent
-with HCD fragmentation. Ion-type labels annotate matched m/z channels and are
-not inputs to the score.
+Python 3.8 or newer.
 
-Detection uses two tiers. A peptide is confirmed if any replicate reaches dot
-product ≥ 0.85 with precursor mass accuracy < 15 ppm and ≥3 fingerprint ions
-above background. Once confirmed, further replicates of that peptide qualify at
-≥ 0.70 with ≥2 ions. A peptide never confirmed has no detections. Dot products
-are reported, and criteria applied, at two decimal places.
+## Detection and scoring
 
-For TRH, a tripeptide, the a1, b1 and y1 ions fall below the m/z 120
-acquisition floor and the y2 ion gives no signal in the synthetic standard;
-b2 and a2 are the observable ions, and detection required dot product ≥ 0.85
-across both. This is set in `MIN_IONS_OVERRIDE`.
+```
+python amidated_peptide_detection.py Supplemental_Table_2.xlsx
+```
 
-The analysis gives 62 peptides across 786 tissue replicate detections.
+Reads two sheets:
 
----
+- **Ion Integrations** — the five fingerprint ions per peptide and their
+  Skyline peak areas in every replicate, plus the monoisotopic precursor and
+  its mass error
+- **Spectral Validation** — the MS1 apex difference from the synthetic
+  standard
 
-## Citation
+and writes three files:
 
-If you use this code, please cite the paper. Correspondence: jzlong@stanford.edu
+- `fingerprints.csv` — the ion panel used for each peptide
+- `detection_by_replicate.csv` — one row per peptide-replicate: dot product,
+  ions above background, precursor mass accuracy, apex difference, tier
+- `detection_by_peptide.csv` — one row per peptide, with the tissues it was
+  detected in
+
+`--out-prefix results/` puts them somewhere other than the working directory.
+
+Expected output on the published table:
+
+```
+56 peptides read from the table
+56 peptides reported (>=1 tier 1 replicate)
+275 peptide-tissue detections
+```
+
+## Criteria
+
+| | |
+|---|---|
+| tier 1 (anchoring) | dot product >= 0.70 across >= 4 of the 5 fingerprint ions |
+| tier 2 (distribution) | dot product >= 0.70 across >= 3 fingerprint ions |
+| precursor mass accuracy | <= 10 ppm, monoisotopic precursor only |
+| MS1 apex | within 0.5 min of the 1 uM synthetic standard |
+
+Both tiers share the dot product threshold; they differ only in how many
+fingerprint ions were above background. A peptide is reported only if at
+least one replicate reaches tier 1. Tier 2 is then applied to the remaining
+replicates of that peptide to map its tissue distribution, and never
+establishes a detection on its own.
+
+A window with no integrated monoisotopic precursor has no mass error and no
+apex, and cannot meet either tier.
+
+The dot product is the normalized cosine between the fingerprint areas in the
+replicate and in the 1 uM standard:
+
+```
+dp = sum(A_sample * A_standard) / (||A_sample|| * ||A_standard||)
+```
+
+All thresholds are in the CONFIG block at the top of the script.
+
+## Two tolerances, doing different jobs
+
+Easy to conflate, so stated plainly:
+
+- **0.5 Da** is the fragment mass tolerance Skyline used to extract the
+  chromatograms. It is spent before this code runs and appears nowhere in it.
+- **`MZ_TOL = 0.02` Da** is the tolerance for matching a fingerprint ion to
+  its exported transition. Both m/z come from the same file, so this only has
+  to absorb rounding. Widening it lets a neighbouring transition stand in for
+  a fingerprint ion that is absent.
+
+## Re-running from the raw export
+
+```
+python amidated_peptide_detection.py --transitions Transition_Results_final.csv
+```
+
+This redoes fingerprint **selection** as well as scoring: the five most
+abundant fragment ions in the 1 uM standard, excluding any ion whose blank
+area exceeds 10% of its standard area, and skipping any ion within 0.5 Da of
+one already chosen, since transitions closer than that are the same
+chromatographic peak. Selection used the standard and blank runs only, before
+any tissue data were examined.
+
+Only needed to reproduce the selection step. The table path gives identical
+calls because the sheet lists the ions that selection chose.
+
+Two cosmetic differences from the published table, neither affecting any
+call: the table blanks the dot product where fewer than three fingerprint
+ions were above background, and zeroes the areas for windows with no MS2
+scan at that precursor.
+
+## Notes
+
+- `FINGERPRINT_OVERRIDE` holds one manual panel, GGFSFRF (PEP-QRFP), whose
+  standard is dominated by a co-eluting contaminant; its ions were chosen
+  from manually inspected spectra.
+- PEP-ADAMTS4 yields only four separable fragment ions and is scored on a
+  four-ion fingerprint requiring 4 of 4. Peptides yielding fewer than four
+  are not assessable and are reported as undetected.
+- Replicate names: Skyline's `Gut_*` and `plasma_*` are the manuscript's
+  `Ileum_*` and `Plasma_*`. Both spellings are accepted.
+- `blank_01`, `blank_02` and `blank_03` are standard carryover and are
+  excluded; the blank filter uses `Blanks` and `Blanks1`.
+- z ions are reported as y-NH3. Measured against the matching y ion in the
+  1 uM standard, all 743 z/y pairs differ by 17.026549 Da to within 8e-7, so
+  these are classical z = y - NH3. The relabelling changes no m/z.
+
+## Citing
+
+Please cite the paper. Supplemental Table 2 holds the data these scripts
+read; the raw files are deposited separately.
